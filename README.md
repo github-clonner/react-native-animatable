@@ -1,5 +1,7 @@
 # react-native-animatable
-Easy to use declarative transitions and a standard set of animations for React Native
+Declarative transitions and animations for React Native
+
+[![Travis](https://img.shields.io/travis/oblador/react-native-animatable.svg)](https://travis-ci.org/oblador/react-native-animatable) [![npm](https://img.shields.io/npm/v/react-native-animatable.svg)](https://npmjs.com/package/react-native-animatable) [![npm](https://img.shields.io/npm/dm/react-native-animatable.svg)](https://npmjs.com/package/react-native-animatable)
 
 ## Installation
 
@@ -59,10 +61,14 @@ You can create your own simple transitions of a style property of your own choos
 |**`direction`**|Direction of animation, especially useful for repeating animations. Valid values: `normal`, `reverse`, `alternate`, `alternate-reverse`. |`normal`|
 |**`easing`**|Timing function for the animation. Valid values: custom function or `linear`, `ease`, `ease-in`, `ease-out`, `ease-in-out`, `ease-in-cubic`, `ease-out-cubic`, `ease-in-out-cubic`, `ease-in-circ`, `ease-out-circ`, `ease-in-out-circ`, `ease-in-expo`, `ease-out-expo`, `ease-in-out-expo`, `ease-in-quad`, `ease-out-quad`, `ease-in-out-quad`, `ease-in-quart`, `ease-out-quart`, `ease-in-out-quart`, `ease-in-quint`, `ease-out-quint`, `ease-in-out-quint`, `ease-in-sine`, `ease-out-sine`, `ease-in-out-sine`, `ease-in-back`, `ease-out-back`, `ease-in-out-back`. |`ease`|
 |**`iterationCount`**|How many times to run the animation, use `infinite` for looped animations. |`1`|
+|**`iterationDelay`**|For how long to pause between animation iterations (milliseconds). |`0`|
 |**`transition`**|What `style` property to transition, for example `opacity`, `rotate` or `fontSize`. Use array for multiple properties.  |*None*|
 |**`onAnimationBegin`**|A function that is called when the animation has been started. |*None*|
 |**`onAnimationEnd`**|A function that is called when the animation has been completed successfully or cancelled. Function is called with an `endState` argument, refer to `endState.finished` to see if the animation completed or not. |*None*|
-|**`useNativeDriver`**|Whether to use native or JavaScript animation driver. Native driver can help with performance but cannot handle all types of styling and requires you to integrate that module on iOS.  |`false`|
+|**`onTransitionBegin`**|A function that is called when the transition of a style has been started. The function is called with a `property` argument to differentiate between styles. |*None*|
+|**`onTransitionEnd`**|A function that is called when the transition of a style has been completed successfully or cancelled. The function is called with a `property` argument to differentiate between styles. |*None*|
+|**`useNativeDriver`**|Whether to use native or JavaScript animation driver. Native driver can help with performance but cannot handle all types of styling.  |`false`|
+|**`isInteraction`**|Whether or not this animation creates an "interaction handle" on the InteractionManager.  |`false` if `iterationCount` is less than or equal to one|
 
 ### Imperative Usage
 
@@ -75,10 +81,14 @@ All animations are exposed as functions on Animatable elements, they take an opt
 import * as Animatable from 'react-native-animatable';
 
 class ExampleView extends Component {
+  handleViewRef = ref => this.view = ref;
+  
+  bounce = () => this.view.bounce(800).then(endState => console.log(endState.finished ? 'bounce finished' : 'bounce cancelled'));
+  
   render() {
     return (
-      <TouchableWithoutFeedback onPress={() => this.refs.view.bounce(800).then((endState) => console.log(endState.finished ? 'bounce finished' : 'bounce cancelled');}>
-        <Animatable.View ref="view">
+      <TouchableWithoutFeedback onPress={this.bounce}>
+        <Animatable.View ref={this.handleViewRef}>
           <Text>Bounce me!</Text>
         </Animatable.View>
       </TouchableWithoutFeedback>
@@ -88,6 +98,11 @@ class ExampleView extends Component {
 ```
 
 To stop any ongoing animations, just invoke `stopAnimation()` on that element. 
+
+You can also animate imperatively by using the `animate()` function on the element for custom animations, for example:
+```
+this.view.animate({ 0: { opacity: 0 }, 1: { opacity: 1 } });
+```
 
 #### Generic transitions
 
@@ -103,10 +118,12 @@ This function will try to determine the current styles and pass it along to `tra
 import * as Animatable from 'react-native-animatable';
 
 class ExampleView extends Component {
+  handleTextRef = ref => this.text = ref;
+  
   render() {
     return (
-      <TouchableWithoutFeedback onPress={() => this.refs.text.transitionTo({opacity: 0.2});}>
-        <Animatable.Text ref="text">Fade me!</Animatable.Text>
+      <TouchableWithoutFeedback onPress={() => this.text.transitionTo({ opacity: 0.2 })}>
+        <Animatable.Text ref={this.handleTextRef}>Fade me!</Animatable.Text>
       </TouchableWithoutFeedback>
     );
   }
@@ -133,6 +150,9 @@ const fadeIn = {
   },
 };
 ```
+```html
+<Animatable.Text animation={fadeIn} >Fade me in</Animatable.Text>
+```
 
 Combining multiple styles to create a zoom out animation: 
 
@@ -152,6 +172,9 @@ const zoomOut = {
   },
 };
 ```
+```html
+<Animatable.Text animation={zoomOut} >Zoom me out</Animatable.Text>
+```
 
 To make your animations globally available by referring to them by a name, you can register them with `initializeRegistryWithDefinitions`. This function can also be used to replace built in animations in case you want to tweak some value. 
 
@@ -164,11 +187,24 @@ Animatable.initializeRegistryWithDefinitions({
 });
 ```
 
-## Demo / Example
+## React Europe Talk
 
-See `Example` folder. 
+[![18922912_1935104760082516_4717918248927023870_o](https://user-images.githubusercontent.com/378279/36341201-fd11e80c-13ea-11e8-8585-ab1d0c5ae27d.jpg)](https://www.youtube.com/watch?v=3SITFIGz4xo)
 
-![animatable-demo](https://cloud.githubusercontent.com/assets/378279/10629128/3c373324-779a-11e5-8311-a3a489575b75.gif)
+The talk __*A Novel Approach to Declarative Animations in React Native*__ from React Europe 2017 about this library and animations/transitions in general is [available on YouTube](https://www.youtube.com/watch?v=3SITFIGz4xo).
+
+## `MakeItRain` example
+
+See [`Examples/MakeItRain`](https://github.com/oblador/react-native-animatable/tree/master/Examples/MakeItRain) folder for the example project from the talk. 
+
+[![MakeItRain Example](https://user-images.githubusercontent.com/378279/36341976-06326ad6-13f7-11e8-8fe1-ab947bbea5c8.gif)](https://github.com/oblador/react-native-animatable/tree/master/Examples/MakeItRain)
+
+
+## `AnimatableExplorer` example
+
+See [`Examples/AnimatableExplorer`](https://github.com/oblador/react-native-animatable/tree/master/Examples/AnimatableExplorer) folder for an example project demoing animations available out of the box and more. 
+
+![Animatable Explorer](https://user-images.githubusercontent.com/378279/36341974-f697e5d8-13f6-11e8-8e2a-21d8c2a4b340.gif)
 
 ## Animations
 

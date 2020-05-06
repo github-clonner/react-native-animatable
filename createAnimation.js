@@ -11,11 +11,12 @@ function notNull(value) {
 function parsePosition(value) {
   if (value === 'from') {
     return 0;
-  } else if (value === 'to') {
+  }
+  if (value === 'to') {
     return 1;
   }
   const parsed = parseFloat(value, 10);
-  if (isNaN(parsed) || parsed < 0 || parsed > 1) {
+  if (Number.isNaN(parsed) || parsed < 0 || parsed > 1) {
     return null;
   }
   return parsed;
@@ -29,7 +30,9 @@ export default function createAnimation(definition) {
     return cache[cacheKey];
   }
 
-  const positions = Object.keys(definition).map(parsePosition).filter(notNull);
+  const positions = Object.keys(definition)
+    .map(parsePosition)
+    .filter(notNull);
   positions.sort(compareNumbers);
 
   if (positions.length < 2) {

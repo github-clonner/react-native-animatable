@@ -95,26 +95,31 @@ function makeInterpolatedStyle(compiledAnimation, animationValue) {
 }
 
 function transitionToValue(
+  property,
   transitionValue,
   toValue,
   duration,
   easing,
   useNativeDriver = false,
   delay,
+  onTransitionBegin,
+  onTransitionEnd,
 ) {
-  if (duration || easing || delay) {
-    Animated.timing(transitionValue, {
-      toValue,
-      delay,
-      duration: duration || 1000,
-      easing: typeof easing === 'function'
-        ? easing
-        : EASING_FUNCTIONS[easing || 'ease'],
-      useNativeDriver,
-    }).start();
-  } else {
-    Animated.spring(transitionValue, { toValue, useNativeDriver }).start();
-  }
+  const animation =
+    duration || easing || delay
+      ? Animated.timing(transitionValue, {
+          toValue,
+          delay,
+          duration: duration || 1000,
+          easing:
+            typeof easing === 'function'
+              ? easing
+              : EASING_FUNCTIONS[easing || 'ease'],
+          useNativeDriver,
+        })
+      : Animated.spring(transitionValue, { toValue, useNativeDriver });
+  setTimeout(() => onTransitionBegin(property), delay);
+  animation.start(() => onTransitionEnd(property));
 }
 
 // Make (almost) any component animatable, similar to Animated.createAnimatedComponent
@@ -150,8 +155,11 @@ export default function createAnimatableComponent(WrappedComponent) {
         }
         return null;
       },
+      iterationDelay: PropTypes.number,
       onAnimationBegin: PropTypes.func,
       onAnimationEnd: PropTypes.func,
+      onTransitionBegin: PropTypes.func,
+      onTransitionEnd: PropTypes.func,
       style: PropTypes.oneOfType([
         PropTypes.number,
         PropTypes.array,
@@ -162,6 +170,7 @@ export default function createAnimatableComponent(WrappedComponent) {
         PropTypes.arrayOf(PropTypes.string),
       ]),
       useNativeDriver: PropTypes.bool,
+      isInteraction: PropTypes.bool,
     };
 
     static defaultProps = {
@@ -171,11 +180,15 @@ export default function createAnimatableComponent(WrappedComponent) {
       duration: undefined,
       easing: undefined,
       iterationCount: 1,
+      iterationDelay: 0,
       onAnimationBegin() {},
       onAnimationEnd() {},
+      onTransitionBegin() {},
+      onTransitionEnd() {},
       style: undefined,
       transition: undefined,
       useNativeDriver: false,
+      isInteraction: undefined,
     };
 
     constructor(props) {
@@ -228,7 +241,10 @@ export default function createAnimatableComponent(WrappedComponent) {
       );
       Object.keys(currentTransitionValues).forEach(key => {
         const value = currentTransitionValues[key];
-        if (INTERPOLATION_STYLE_PROPERTIES.indexOf(key) !== -1) {
+        if (
+          INTERPOLATION_STYLE_PROPERTIES.indexOf(key) !== -1 ||
+          typeof value !== 'number'
+        ) {
           transitionValues[key] = new Animated.Value(0);
           styleValues[key] = value;
         } else {
@@ -274,6 +290,7 @@ export default function createAnimatableComponent(WrappedComponent) {
     }
 
     ref = null;
+
     handleRef = ref => {
       this.ref = ref;
     };
@@ -290,12 +307,14 @@ export default function createAnimatableComponent(WrappedComponent) {
         duration,
         delay,
         onAnimationBegin,
-        onAnimationEnd,
+        iterationDelay,
       } = this.props;
       if (animation) {
         const startAnimation = () => {
           onAnimationBegin();
-          this.startAnimation(duration, 0, onAnimationEnd);
+          this.startAnimation(duration, 0, iterationDelay, endState =>
+            this.props.onAnimationEnd(endState),
+          );
           this.delayTimer = null;
         };
         if (delay) {
@@ -306,15 +325,16 @@ export default function createAnimatableComponent(WrappedComponent) {
       }
     }
 
-    componentWillReceiveProps(props) {
+    // eslint-disable-next-line camelcase
+    UNSAFE_componentWillReceiveProps(props) {
       const {
         animation,
         delay,
         duration,
         easing,
+        iterationDelay,
         transition,
         onAnimationBegin,
-        onAnimationEnd,
       } = props;
 
       if (transition) {
@@ -326,7 +346,9 @@ export default function createAnimatableComponent(WrappedComponent) {
             this.setAnimation(animation);
           } else {
             onAnimationBegin();
-            this.animate(animation, duration).then(onAnimationEnd);
+            this.animate(animation, duration, iterationDelay).then(endState =>
+              this.props.onAnimationEnd(endState),
+            );
           }
         } else {
           this.stopAnimation();
@@ -342,17 +364,22 @@ export default function createAnimatableComponent(WrappedComponent) {
 
     setAnimation(animation, callback) {
       const compiledAnimation = getCompiledAnimation(animation);
-      const animationStyle = makeInterpolatedStyle(
-        compiledAnimation,
-        this.state.animationValue,
+      this.setState(
+        state => ({
+          animationStyle: makeInterpolatedStyle(
+            compiledAnimation,
+            state.animationValue,
+          ),
+          compiledAnimation,
+        }),
+        callback,
       );
-      this.setState({ animationStyle, compiledAnimation }, callback);
     }
 
-    animate(animation, duration) {
+    animate(animation, duration, iterationDelay) {
       return new Promise(resolve => {
         this.setAnimation(animation, () => {
-          this.startAnimation(duration, 0, resolve);
+          this.startAnimation(duration, 0, iterationDelay, resolve);
         });
       });
     }
@@ -369,9 +396,9 @@ export default function createAnimatableComponent(WrappedComponent) {
       }
     }
 
-    startAnimation(duration, iteration, callback) {
+    startAnimation(duration, iteration, iterationDelay, callback) {
       const { animationValue, compiledAnimation } = this.state;
-      const { direction, iterationCount, useNativeDriver } = this.props;
+      const { direction, iterationCount, useNativeDriver, isInteraction } = this.props;
       let easing = this.props.easing || compiledAnimation.easing || 'ease';
       let currentIteration = iteration || 0;
       const fromValue = getAnimationOrigin(currentIteration, direction);
@@ -389,21 +416,28 @@ export default function createAnimatableComponent(WrappedComponent) {
       if (reversed) {
         easing = Easing.out(easing);
       }
-
-      Animated.timing(animationValue, {
+      const config = {
         toValue,
         easing,
-        isInteraction: iterationCount <= 1,
+        isInteraction: typeof isInteraction !== "undefined" ? isInteraction : iterationCount <= 1,
         duration: duration || this.props.duration || 1000,
         useNativeDriver,
-      }).start(endState => {
+        delay: iterationDelay || 0,
+      };
+
+      Animated.timing(animationValue, config).start(endState => {
         currentIteration += 1;
         if (
           endState.finished &&
           this.props.animation &&
           (iterationCount === 'infinite' || currentIteration < iterationCount)
         ) {
-          this.startAnimation(duration, currentIteration, callback);
+          this.startAnimation(
+            duration,
+            currentIteration,
+            iterationDelay,
+            callback,
+          );
         } else if (callback) {
           callback(endState);
         }
@@ -428,7 +462,8 @@ export default function createAnimatableComponent(WrappedComponent) {
           transitionValue = new Animated.Value(0);
         }
         const needsInterpolation =
-          INTERPOLATION_STYLE_PROPERTIES.indexOf(property) !== -1;
+          INTERPOLATION_STYLE_PROPERTIES.indexOf(property) !== -1 ||
+          typeof value !== 'number';
         const needsZeroClamping =
           ZERO_CLAMPED_STYLE_PROPERTIES.indexOf(property) !== -1;
         if (needsInterpolation) {
@@ -477,7 +512,8 @@ export default function createAnimatableComponent(WrappedComponent) {
       Object.keys(toValuesFlat).forEach(property => {
         const toValue = toValuesFlat[property];
         const needsInterpolation =
-          INTERPOLATION_STYLE_PROPERTIES.indexOf(property) !== -1;
+          INTERPOLATION_STYLE_PROPERTIES.indexOf(property) !== -1 ||
+          typeof value !== 'number';
         const needsZeroClamping =
           ZERO_CLAMPED_STYLE_PROPERTIES.indexOf(property) !== -1;
         const transitionStyle = this.state.transitionStyle[property];
@@ -489,12 +525,15 @@ export default function createAnimatableComponent(WrappedComponent) {
           transitionStyle === transitionValue
         ) {
           transitionToValue(
+            property,
             transitionValue,
             toValue,
             duration,
             easing,
             this.props.useNativeDriver,
             delay,
+            prop => this.props.onTransitionBegin(prop),
+            prop => this.props.onTransitionEnd(prop),
           );
         } else {
           let currentTransitionValue = currentTransitionValues[property];
@@ -520,12 +559,15 @@ export default function createAnimatableComponent(WrappedComponent) {
         const transitionValue = this.state.transitionValues[property];
         const toValue = toValues[property];
         transitionToValue(
+          property,
           transitionValue,
           toValue,
           duration,
           easing,
           this.props.useNativeDriver,
           delay,
+          prop => this.props.onTransitionBegin(prop),
+          prop => this.props.onTransitionEnd(prop),
         );
       });
     }
@@ -536,7 +578,23 @@ export default function createAnimatableComponent(WrappedComponent) {
         throw new Error('You cannot combine animation and transition props');
       }
       const restProps = omit(
-        Object.keys(AnimatableComponent.propTypes),
+        [
+          'animation',
+          'duration',
+          'direction',
+          'delay',
+          'easing',
+          'iterationCount',
+          'iterationDelay',
+          'onAnimationBegin',
+          'onAnimationEnd',
+          'onTransitionBegin',
+          'onTransitionEnd',
+          'style',
+          'transition',
+          'useNativeDriver',
+          'isInteraction',
+        ],
         this.props,
       );
 
